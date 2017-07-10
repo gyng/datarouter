@@ -3,12 +3,30 @@
 
 extern crate rocket;
 
+#[derive(Debug)]
+struct Log {
+    timestamp: u32,
+    payload: String,
+    label: Option<String>,
+}
+
+impl Log {
+    fn new(payload: String, label: Option<String>) -> Log {
+        Log { timestamp: 0, payload: payload, label: label}
+    }
+}
+
 trait Node {
     fn start(&self) -> Result<(), String>;
     fn is_input(&self) -> bool;
     fn chain(&self, node: Box<Node>) -> Result<(), String>;
     fn stop(&self) -> Result<(), String>;
-    // fn process(&self) -> Result<(), String>;
+    // Should encapsulate chaining logic?
+    // fn send(&self, data: Log) -> 
+    fn process(&self, data: Log) -> Result<(), String> {
+        println!("{:?}", data);
+        Ok(())
+    }
     // fn chained(&self) -> Vec<Box<Node>>;
     // fn forward(&self) -> Result<(), String>;
 }
@@ -24,9 +42,10 @@ mod HttpInput {
         "Hello, world!"
     }
 
-    #[post("/logs/<label>", format="application/json")]
+    // replace with post, check jwt
+    #[get("/logs/<label>", format="application/json")]
     fn logs(label: &str) {
-        
+        ????process(super::Log::new(label.to_string(), Some("HELLO".to_string())))
     }
 }
 
@@ -38,7 +57,9 @@ impl HttpInputNode {
 
 impl Node for HttpInputNode {
     fn start(&self) -> Result<(), String> {
-        rocket::ignite().mount("/", routes![HttpInput::index, HttpInput::logs]).launch();
+        rocket::ignite()
+            .manage(self)
+            .mount("/", routes![HttpInput::index, HttpInput::logs]).launch();
         Ok(())
     }
 
@@ -61,4 +82,5 @@ struct PostgresOutputNode {
 
 fn main() {
     let rooter = HttpInputNode::new(&"".to_string());
+    rooter.start();
 }
