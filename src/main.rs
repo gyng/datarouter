@@ -20,6 +20,14 @@ impl Log {
 
 trait Node: Send + Sync + Debug {
     fn start(self) -> Result<(), String> where Self: std::marker::Sized {
+        self.start_next()
+    }
+
+    fn start_next(&self) -> Result<(), String> where Self: std::marker::Sized {
+        if let &Some(ref next) = self.get_next() {
+            return next.start();
+        }
+
         Ok(())
     }
 
@@ -78,7 +86,7 @@ impl Node for HttpInputNode {
             .manage(node)
             .mount("/", routes![http_input_node::index, http_input_node::logs]).launch();
 
-        Ok(())
+        self.start_next()
     }
 
     fn get_next(&self) -> &Option<Box<Node>> {
