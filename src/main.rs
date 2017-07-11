@@ -4,6 +4,11 @@
 extern crate rocket;
 
 use std::fmt::Debug;
+use std::sync::mpsc::channel;
+use std::sync::mpsc::{Sender, Receiver};
+use std::thread;
+use std::sync::Arc;
+use std::sync::Mutex;
 
 #[derive(Debug)]
 struct Log {
@@ -14,51 +19,49 @@ struct Log {
 
 impl Log {
     fn new(payload: String, label: Option<String>) -> Log {
-        Log { timestamp: 0, payload: payload, label: label}
+        Log {
+            timestamp: 0,
+            payload: payload,
+            label: label,
+        }
     }
 }
 
-trait Node: Send + Sync + Debug {
-    fn start(self) -> Result<(), String> where Self: std::marker::Sized {
-        self.start_next()
-    }
-
-    fn start_next(&self) -> Result<(), String> where Self: std::marker::Sized {
-        if let &Some(ref next) = self.get_next() {
-            return next.start();
-        }
-
-        Ok(())
+trait Node: Debug {
+    fn start(&self) -> Result<Sender<Log>, String> {
+        let (sender, _receiver) = channel();
+        Ok(sender)
     }
 
     fn stop(&self) -> Result<(), String> {
         Ok(())
     }
-
-    fn process(&self, data: Log) -> Result<(), String> {
-        // passthrough
-        self.process_next(data)
-    }
-
-    fn process_next(&self, data: Log) -> Result<(), String> {
-        if let &Some(ref next) = self.get_next() {
-            return next.process(data);
-        }
-
-        Ok(())
-    }
-
-    fn get_next(&self) -> &Option<Box<Node>>;
 }
 
 #[derive(Debug)]
 struct HttpInputNode {
-    next: Option<Box<Node>>,
+    rx: Arc<Mutex<Receiver<Log>>>,
+    tx_inc: Sender<Log>,
+    tx_out: Option<Sender<Log>>,
+}
+
+impl HttpInputNode {
+    fn new(_config: &String, next: Option<Sender<Log>>) -> Self {
+        let (sender, receiver) = channel();
+
+        Self {
+            rx: Arc::new(Mutex::new(receiver)),
+            tx_inc: sender,
+            tx_out: next,
+        }
+    }
 }
 
 mod http_input_node {
     use rocket::State;
-    use super::{Log, Node};
+    use super::Log;
+    use std::sync::mpsc::Sender;
+    use std::sync::Mutex;
 
     #[get("/")]
     fn index() -> &'static str {
@@ -66,58 +69,63 @@ mod http_input_node {
     }
 
     #[get("/logs/<label>")]
-    fn logs(label: &str, node: State<Box<Node>>) {
-        println!("{:?}", node);
-        let _ = node.process(Log::new("lol".to_string(), Some(label.to_string())));
-    }
-}
-
-impl HttpInputNode {
-    fn new(config: &String, next: Option<Box<Node>>) -> Self {
-        Self { next: next }
+    fn logs(label: &str, sender: State<Mutex<Sender<Log>>>) {
+        // should use try_lock instead?
+        let _ = sender.inner().lock().unwrap().send(Log::new(
+            "lol".to_string(),
+            Some(label.to_string()),
+        ));
     }
 }
 
 impl Node for HttpInputNode {
-    fn start(self) -> Result<(), String> {
-        let node: Box<Node> = Box::new(self);
+    fn start(&self) -> Result<Sender<Log>, String> {
+        let tx: Mutex<Sender<Log>> = Mutex::new(self.tx_out.clone().unwrap());
 
         rocket::ignite()
-            .manage(node)
-            .mount("/", routes![http_input_node::index, http_input_node::logs]).launch();
+            .manage(tx)
+            .mount("/", routes![http_input_node::index, http_input_node::logs])
+            .launch();
 
-        self.start_next()
-    }
-
-    fn get_next(&self) -> &Option<Box<Node>> {
-        &self.next
+        Ok(self.tx_inc.clone())
     }
 }
 
 #[derive(Debug)]
 struct StdoutOutputNode {
-    next: Option<Box<Node>>,
+    rx: Arc<Mutex<Receiver<Log>>>,
+    tx_inc: Sender<Log>,
+    tx_out: Option<Sender<Log>>,
 }
 
 impl StdoutOutputNode {
-    fn new(config: &String, next: Option<Box<Node>>) -> Self {
-        Self { next: next }
+    fn new(_config: &String, next: Option<Sender<Log>>) -> Self {
+        let (sender, receiver) = channel();
+
+        Self {
+            rx: Arc::new(Mutex::new(receiver)),
+            tx_inc: sender,
+            tx_out: next,
+        }
     }
 }
 
 impl Node for StdoutOutputNode {
-    fn get_next(&self) -> &Option<Box<Node>> {
-        &self.next
-    }
+    fn start(&self) -> Result<Sender<Log>, String> {
+        let receiver = self.rx.clone();
 
-    fn process(&self, data: Log) -> Result<(), String> {
-        println!("{:?}", data);
-        self.process_next(data)
+        let _ = thread::spawn(move || loop {
+            println!("{:?}", receiver.lock().unwrap().recv().unwrap());
+        });
+
+        Ok(self.tx_inc.clone())
     }
 }
 
 fn main() {
-    let _ = HttpInputNode::new(&"".to_string(),
-        Some(Box::new(StdoutOutputNode::new(&"".to_string(), None)))
-    ).start();
+    let _ = HttpInputNode::new(
+        &"".to_string(),
+        StdoutOutputNode::new(&"".to_string(), None).start().ok(),
+    ).start()
+        .unwrap();
 }
