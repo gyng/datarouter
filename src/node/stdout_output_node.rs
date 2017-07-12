@@ -30,9 +30,20 @@ impl StdoutOutputNode {
 impl Node for StdoutOutputNode {
     fn start(&self) -> Result<Sender<Log>, String> {
         let receiver = self.rx.clone();
+        let tx = self.tx_out.clone().map(|t| Arc::new(Mutex::new(t)));
 
-        let _ = thread::spawn(move || loop {
-            println!("{:?}", receiver.lock().unwrap().recv().unwrap());
+        let _ = thread::spawn(move || {
+            let tx_child = tx.clone();
+            loop {
+                let log = receiver.lock().unwrap().recv().unwrap();
+
+                println!("{:?}", log.clone());
+
+                if tx_child.as_ref().is_some() {
+                    let m = tx_child.as_ref().unwrap();
+                    let _ = m.lock().unwrap().send(log);
+                }
+            }
         });
 
         Ok(self.tx_inc.clone())
