@@ -24,21 +24,27 @@ use node::Node;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
+    if args.len() < 2 {
+        println!("Please specify pipeline configuration path to read from");
+        return;
+    }
     let pipeline_path = &args[1];
-
-    let mut config_json = String::new();
-    File::open(pipeline_path)
-        .map_err(|e| format!("{:?}", e))
-        .unwrap()
-        .read_to_string(&mut config_json)
-        .map_err(|e| format!("{:?}", e))
-        .unwrap();
-
-    let config: NodeConfig = serde_json::from_str(config_json.as_ref())
-        .map_err(|e| format!("{:?}", e))
-        .unwrap();
-
+    let config = read_pipeline_config(&pipeline_path).unwrap();
     start_pipeline(&config);
+}
+
+fn read_pipeline_config(path: &str) -> Result<NodeConfig, String> {
+    let mut config_json = String::new();
+    File::open(path)
+        .map_err(|e| format!("{:?}", e))?
+        .read_to_string(&mut config_json)
+        .map_err(|e| format!("{:?}", e))?;
+
+    let config: NodeConfig = serde_json::from_str(config_json.as_ref()).map_err(|e| {
+        format!("{:?}", e)
+    })?;
+
+    Ok(config)
 }
 
 fn start_pipeline(node_config: &NodeConfig) -> Option<Sender<Log>> {
@@ -49,7 +55,17 @@ fn start_pipeline(node_config: &NodeConfig) -> Option<Sender<Log>> {
     };
 
     match node_config.node {
-        NodeType::StdoutOutputNode => StdoutOutputNode::new(&node_config.conf, next).start().ok(),
-        NodeType::HttpInputNode => HttpInputNode::new(&node_config.conf, next).start().ok(),
+        NodeType::StdoutOutputNode => {
+            StdoutOutputNode::new(&node_config.conf, next)
+                .start()
+                .map_err(|e| format!("{:?}", e))
+                .ok()
+        }
+        NodeType::HttpInputNode => {
+            HttpInputNode::new(&node_config.conf, next)
+                .start()
+                .map_err(|e| format!("{:?}", e))
+                .ok()
+        }
     }
 }

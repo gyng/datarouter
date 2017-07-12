@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::sync::mpsc::{Sender, Receiver};
 use std::thread;
 
-use ::Log;
+use Log;
 use node::Node;
 
 #[derive(Debug)]

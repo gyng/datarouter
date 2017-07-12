@@ -3,7 +3,7 @@ use std::sync::mpsc::channel;
 use std::fmt::Debug;
 use std::collections::HashMap;
 
-use ::log::Log;
+use log::Log;
 
 pub mod http_input_node;
 pub mod stdout_output_node;

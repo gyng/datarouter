@@ -15,12 +15,14 @@ fn index() -> &'static str {
 }
 
 #[get("/logs/<label>")]
-fn logs(label: &str, sender: State<Mutex<Sender<Log>>>) {
+fn logs(label: &str, tx_out: State<Option<Mutex<Sender<Log>>>>) {
     // should use try_lock instead?
-    let _ = sender.inner().lock().unwrap().send(Log::new(
-        "lol".to_string(),
-        Some(label.to_string()),
-    ));
+    if tx_out.is_some() {
+        let _ = tx_out.as_ref().unwrap().lock().unwrap().send(Log::new(
+            "lol".to_string(),
+            Some(label.to_string()),
+        ));
+    }
 }
 
 #[derive(Debug)]
@@ -44,7 +46,7 @@ impl HttpInputNode {
 
 impl Node for HttpInputNode {
     fn start(&self) -> Result<Sender<Log>, String> {
-        let tx: Mutex<Sender<Log>> = Mutex::new(self.tx_out.clone().unwrap());
+        let tx = self.tx_out.clone().map(|t| Mutex::new(t));
 
         rocket::ignite()
             .manage(tx)
