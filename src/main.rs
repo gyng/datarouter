@@ -1,131 +1,55 @@
 #![feature(plugin)]
 #![plugin(rocket_codegen)]
 
+#[macro_use]
+extern crate serde_derive;
+
 extern crate rocket;
+extern crate serde;
+extern crate serde_json;
 
-use std::fmt::Debug;
-use std::sync::mpsc::channel;
-use std::sync::mpsc::{Sender, Receiver};
-use std::thread;
-use std::sync::Arc;
-use std::sync::Mutex;
+use std::env;
+use std::fs::File;
+use std::io::Read;
+use std::sync::mpsc::Sender;
 
-#[derive(Debug)]
-struct Log {
-    timestamp: u32,
-    payload: String,
-    label: Option<String>,
-}
+mod log;
+mod node;
 
-impl Log {
-    fn new(payload: String, label: Option<String>) -> Log {
-        Log {
-            timestamp: 0,
-            payload: payload,
-            label: label,
-        }
-    }
-}
-
-trait Node: Debug {
-    fn start(&self) -> Result<Sender<Log>, String> {
-        let (sender, _receiver) = channel();
-        Ok(sender)
-    }
-
-    fn stop(&self) -> Result<(), String> {
-        Ok(())
-    }
-}
-
-#[derive(Debug)]
-struct HttpInputNode {
-    rx: Arc<Mutex<Receiver<Log>>>,
-    tx_inc: Sender<Log>,
-    tx_out: Option<Sender<Log>>,
-}
-
-impl HttpInputNode {
-    fn new(_config: &String, next: Option<Sender<Log>>) -> Self {
-        let (sender, receiver) = channel();
-
-        Self {
-            rx: Arc::new(Mutex::new(receiver)),
-            tx_inc: sender,
-            tx_out: next,
-        }
-    }
-}
-
-mod http_input_node {
-    use rocket::State;
-    use super::Log;
-    use std::sync::mpsc::Sender;
-    use std::sync::Mutex;
-
-    #[get("/")]
-    fn index() -> &'static str {
-        "Hello, world!"
-    }
-
-    #[get("/logs/<label>")]
-    fn logs(label: &str, sender: State<Mutex<Sender<Log>>>) {
-        // should use try_lock instead?
-        let _ = sender.inner().lock().unwrap().send(Log::new(
-            "lol".to_string(),
-            Some(label.to_string()),
-        ));
-    }
-}
-
-impl Node for HttpInputNode {
-    fn start(&self) -> Result<Sender<Log>, String> {
-        let tx: Mutex<Sender<Log>> = Mutex::new(self.tx_out.clone().unwrap());
-
-        rocket::ignite()
-            .manage(tx)
-            .mount("/", routes![http_input_node::index, http_input_node::logs])
-            .launch();
-
-        Ok(self.tx_inc.clone())
-    }
-}
-
-#[derive(Debug)]
-struct StdoutOutputNode {
-    rx: Arc<Mutex<Receiver<Log>>>,
-    tx_inc: Sender<Log>,
-    tx_out: Option<Sender<Log>>,
-}
-
-impl StdoutOutputNode {
-    fn new(_config: &String, next: Option<Sender<Log>>) -> Self {
-        let (sender, receiver) = channel();
-
-        Self {
-            rx: Arc::new(Mutex::new(receiver)),
-            tx_inc: sender,
-            tx_out: next,
-        }
-    }
-}
-
-impl Node for StdoutOutputNode {
-    fn start(&self) -> Result<Sender<Log>, String> {
-        let receiver = self.rx.clone();
-
-        let _ = thread::spawn(move || loop {
-            println!("{:?}", receiver.lock().unwrap().recv().unwrap());
-        });
-
-        Ok(self.tx_inc.clone())
-    }
-}
+use log::Log;
+use node::{NodeType, NodeConfig};
+use node::http_input_node::HttpInputNode;
+use node::stdout_output_node::StdoutOutputNode;
+use node::Node;
 
 fn main() {
-    let _ = HttpInputNode::new(
-        &"".to_string(),
-        StdoutOutputNode::new(&"".to_string(), None).start().ok(),
-    ).start()
+    let args: Vec<String> = env::args().collect();
+    let pipeline_path = &args[1];
+
+    let mut config_json = String::new();
+    File::open(pipeline_path)
+        .map_err(|e| format!("{:?}", e))
+        .unwrap()
+        .read_to_string(&mut config_json)
+        .map_err(|e| format!("{:?}", e))
         .unwrap();
+
+    let config: NodeConfig = serde_json::from_str(config_json.as_ref())
+        .map_err(|e| format!("{:?}", e))
+        .unwrap();
+
+    start_pipeline(&config);
+}
+
+fn start_pipeline(node_config: &NodeConfig) -> Option<Sender<Log>> {
+    let next = if let Some(ref next_config) = node_config.next {
+        start_pipeline(&next_config)
+    } else {
+        None
+    };
+
+    match node_config.node {
+        NodeType::StdoutOutputNode => StdoutOutputNode::new(&node_config.conf, next).start().ok(),
+        NodeType::HttpInputNode => HttpInputNode::new(&node_config.conf, next).start().ok(),
+    }
 }
