@@ -56,13 +56,13 @@ fn start_pipeline(node_config: &NodeConfig) -> Option<Sender<Log>> {
 
     match node_config.node {
         NodeType::StdoutOutputNode => {
-            StdoutOutputNode::new(&node_config.conf, next)
+            StdoutOutputNode::new(node_config.conf.as_ref(), next)
                 .start()
                 .map_err(|e| format!("{:?}", e))
                 .ok()
         }
         NodeType::HttpInputNode => {
-            HttpInputNode::new(&node_config.conf, next)
+            HttpInputNode::new(node_config.conf.as_ref(), next)
                 .start()
                 .map_err(|e| format!("{:?}", e))
                 .ok()

@@ -3,7 +3,6 @@
     "conf": {},
     "next": {
         "node": "StdoutOutputNode",
-        "conf": {},
         "next": null
     }
 }

@@ -16,7 +16,7 @@ pub struct StdoutOutputNode {
 }
 
 impl StdoutOutputNode {
-    pub fn new(_config: &HashMap<String, String>, next: Option<Sender<Log>>) -> Self {
+    pub fn new(_config: Option<&HashMap<String, String>>, next: Option<Sender<Log>>) -> Self {
         let (sender, receiver) = channel();
 
         Self {

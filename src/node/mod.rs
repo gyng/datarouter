@@ -17,7 +17,7 @@ pub enum NodeType {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct NodeConfig {
     pub node: NodeType,
-    pub conf: HashMap<String, String>,
+    pub conf: Option<HashMap<String, String>>,
     pub next: Option<Box<NodeConfig>>,
 }
 
