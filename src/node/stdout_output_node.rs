@@ -40,8 +40,7 @@ impl Node for StdoutOutputNode {
                 println!("{:?}", log.clone());
 
                 if tx_child.as_ref().is_some() {
-                    let m = tx_child.as_ref().unwrap();
-                    let _ = m.lock().unwrap().send(log);
+                    let _ = tx_child.as_ref().unwrap().lock().unwrap().send(log);
                 }
             }
         });
