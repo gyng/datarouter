@@ -61,7 +61,6 @@ impl Node for PostgresOutputNode {
 
             loop {
                 let log = receiver.lock().unwrap().recv().unwrap();
-                println!("PG {:?}", log.clone());
 
                 let _ = conn.execute(
                     &format!(
