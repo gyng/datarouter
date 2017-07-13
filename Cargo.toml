@@ -4,8 +4,10 @@ version = "0.1.0"
 authors = ["Ng Guoyou <ng.guoyou@gmail.com>"]
 
 [dependencies]
-rocket = "0.2.8"
-rocket_codegen = "0.2.8"
+rocket = { git = "https://github.com/SergioBenitez/Rocket", rev = "aa51fe0" }
+rocket_codegen = { git = "https://github.com/SergioBenitez/Rocket", rev = "aa51fe0" }
 serde = "1.0.9"
 serde_json = "1.0"
 serde_derive = "1.0.9"
+postgres = { version = "0.14.2", features = ["with-chrono", "with-serde_json"] }
+chrono = "0.3" # postgres does not support chrono 0.4

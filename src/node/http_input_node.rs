@@ -11,16 +11,18 @@ use node::Node;
 
 #[get("/")]
 fn index() -> &'static str {
-    "Hello, world!"
+    "Log receiver is listening on POST /logs/<label>"
 }
 
-#[get("/logs/<label>")]
-fn logs(label: &str, tx_out: State<Option<Mutex<Sender<Log>>>>) {
+#[post("/logs/<label>", data = "<body>")]
+fn logs(label: String, body: String, tx_out: State<Option<Mutex<Sender<Log>>>>) {
     // should use try_lock instead?
     if tx_out.is_some() {
         let _ = tx_out.as_ref().unwrap().lock().unwrap().send(Log::new(
-            "lol".to_string(),
-            Some(label.to_string()),
+            body,
+            Some(
+                label.to_string(),
+            ),
         ));
     }
 }
@@ -33,7 +35,7 @@ pub struct HttpInputNode {
 }
 
 impl HttpInputNode {
-    pub fn new(_config: Option<&HashMap<String, String>>, next: Option<Sender<Log>>) -> Self {
+    pub fn new(_config: Option<HashMap<String, String>>, next: Option<Sender<Log>>) -> Self {
         let (sender, receiver) = channel();
 
         Self {

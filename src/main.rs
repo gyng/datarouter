@@ -7,6 +7,8 @@ extern crate serde_derive;
 extern crate rocket;
 extern crate serde;
 extern crate serde_json;
+extern crate postgres;
+extern crate chrono;
 
 use std::env;
 use std::fs::File;
@@ -20,6 +22,7 @@ use log::Log;
 use node::{NodeType, NodeConfig};
 use node::http_input_node::HttpInputNode;
 use node::stdout_output_node::StdoutOutputNode;
+use node::postgres_output_node::PostgresOutputNode;
 use node::Node;
 
 fn main() {
@@ -56,13 +59,19 @@ fn start_pipeline(node_config: &NodeConfig) -> Option<Sender<Log>> {
 
     match node_config.node {
         NodeType::StdoutOutputNode => {
-            StdoutOutputNode::new(node_config.conf.as_ref(), next)
+            StdoutOutputNode::new(node_config.conf.clone(), next)
                 .start()
                 .map_err(|e| format!("{:?}", e))
                 .ok()
         }
         NodeType::HttpInputNode => {
-            HttpInputNode::new(node_config.conf.as_ref(), next)
+            HttpInputNode::new(node_config.conf.clone(), next)
+                .start()
+                .map_err(|e| format!("{:?}", e))
+                .ok()
+        }
+        NodeType::PostgresOutputNode => {
+            PostgresOutputNode::new(node_config.conf.clone(), next)
                 .start()
                 .map_err(|e| format!("{:?}", e))
                 .ok()

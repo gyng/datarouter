@@ -12,7 +12,6 @@ cargo run --release -- pipeline.json
 
 ## TODO 
 
-* Fanout
-* Postgres output
+* Postgres JSONB w/ serde support, sane default config
 * Move Rocket config into pipeline.json
-* Add auth for HTTP input node
+* Add auth for HTTP input node (JWT, Basic, None)

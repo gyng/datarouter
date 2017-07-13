@@ -1,10 +1,17 @@
 {
-    "node": "HttpInputNode",
-    "conf": {},
+  "node": "HttpInputNode",
+  "conf": {},
+  "next": {
+    "node": "StdoutOutputNode",
     "next": {
-        "node": "StdoutOutputNode",
-        "next": {
-            "node": "StdoutOutputNode"
+      "node": "StdoutOutputNode",
+      "next": {
+        "node": "PostgresOutputNode",
+        "conf": {
+          "connection": "postgres://postgres:Password123@localhost:5999/lapp",
+          "table_name": "testlogs"
         }
+      }
     }
+  }
 }
