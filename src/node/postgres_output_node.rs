@@ -69,7 +69,7 @@ impl Node for PostgresOutputNode {
                         table_name
                     ),
                     &[&log.timestamp, &log.payload],
-                ).unwrap(); // TODO: Handle this
+                ).map_err(|err| println!("PostgresOutputNode error: {:?}", err));
 
                 if tx_child.as_ref().is_some() {
                     let _ = tx_child.as_ref().unwrap().lock().unwrap().send(log);
