@@ -1,7 +1,11 @@
 [package]
-name = "llog"
+name = "datarouter"
 version = "0.1.0"
 authors = ["Ng Guoyou <ng.guoyou@gmail.com>"]
+
+[[bin]]
+name = "datarouter"
+path = "src/main.rs"
 
 [dependencies]
 rocket = { git = "https://github.com/SergioBenitez/Rocket", rev = "aa51fe0" }

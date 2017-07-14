@@ -1,0 +1,8 @@
+version: "2.1"
+services:
+  datarouter:
+    volumes:
+      - ./config:/app/config
+    command: [./datarouter, config/pipeline.json]
+    expose:
+      - 8000
