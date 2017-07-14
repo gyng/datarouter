@@ -28,8 +28,4 @@ pub trait Node: Debug {
         let (sender, _receiver) = channel();
         Ok(sender)
     }
-
-    fn stop(&self) -> Result<(), String> {
-        Ok(())
-    }
 }
