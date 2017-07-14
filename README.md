@@ -1,6 +1,6 @@
 # datarouter
 
-[![Build Status](https://travis-ci.org/gyng/rlogdata.svg?branch=master)](https://travis-ci.org/gyng/rlogdata)
+[![Build Status](https://travis-ci.org/gyng/datarouter.svg?branch=master)](https://travis-ci.org/gyng/datarouter)
 
 In development. Intended to route logs/data from one place to another, with processing as needed. Maybe a simpler version of rsyslog?
 
