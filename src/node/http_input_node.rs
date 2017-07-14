@@ -61,3 +61,13 @@ impl Node for HttpInputNode {
         Ok(self.tx_inc.clone())
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn it_passes_received_logs_through() {
+        test_passthrough!(HttpInputNode);
+    }
+}

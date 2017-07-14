@@ -35,7 +35,7 @@ impl Node for StdoutOutputNode {
         let _ = thread::spawn(move || {
             let tx_child = tx.clone();
             loop {
-                let log = receiver.lock().unwrap().recv().unwrap();
+                let log = receiver.lock().unwrap().recv().unwrap(); // panics on recv in test
 
                 println!("{:?}", log.clone());
 
@@ -46,5 +46,15 @@ impl Node for StdoutOutputNode {
         });
 
         Ok(self.tx_inc.clone())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn it_passes_received_logs_through() {
+        test_passthrough!(StdoutOutputNode);
     }
 }
