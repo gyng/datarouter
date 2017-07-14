@@ -5,6 +5,7 @@ use std::sync::Mutex;
 use std::sync::Arc;
 use std::sync::mpsc::channel;
 use std::collections::HashMap;
+use std::thread;
 
 use Log;
 use node::Node;
@@ -50,10 +51,12 @@ impl Node for HttpInputNode {
     fn start(&self) -> Result<Sender<Log>, String> {
         let tx = self.tx_out.clone().map(|t| Mutex::new(t));
 
-        rocket::ignite()
-            .manage(tx)
-            .mount("/", routes![index, logs])
-            .launch();
+        thread::spawn(||
+            rocket::ignite()
+                .manage(tx)
+                .mount("/", routes![index, logs])
+                .launch()
+        );
 
         Ok(self.tx_inc.clone())
     }

@@ -8,6 +8,7 @@ use log::Log;
 pub mod http_input_node;
 pub mod stdout_output_node;
 pub mod postgres_output_node;
+pub mod start_node;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum NodeType {

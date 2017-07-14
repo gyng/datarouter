@@ -23,6 +23,7 @@ use node::{NodeType, NodeConfig};
 use node::http_input_node::HttpInputNode;
 use node::stdout_output_node::StdoutOutputNode;
 use node::postgres_output_node::PostgresOutputNode;
+use node::start_node::StartNode;
 use node::Node;
 
 fn main() {
@@ -50,9 +51,20 @@ fn read_pipeline_config(path: &str) -> Result<NodeConfig, String> {
     Ok(config)
 }
 
-fn start_pipeline(node_config: &NodeConfig) -> Option<Sender<Log>> {
+fn start_pipeline(config: &NodeConfig) -> Option<Sender<Log>> {
+    let _ = chain_pipeline(config);
+
+    Some(
+        StartNode {}
+            .start()
+            .map_err(|e| format!("{:?}", e))
+            .unwrap(),
+    )
+}
+
+fn chain_pipeline(node_config: &NodeConfig) -> Option<Sender<Log>> {
     let next = if let Some(ref next_config) = node_config.next {
-        start_pipeline(&next_config)
+        chain_pipeline(&next_config)
     } else {
         None
     };
