@@ -33,50 +33,47 @@ impl PostgresOutputNode {
 
 impl Node for PostgresOutputNode {
     fn start(&self) -> Result<Sender<Log>, String> {
-        // TODO: Add sane defaults
-        let config = self.config.clone().unwrap();
-        let table_name = config.get("table_name").unwrap().to_string();
-        let db_address = config.get("connection").unwrap().to_string();
+        let config = self.config.clone().unwrap_or(HashMap::new());
+        let table_name = config
+            .get("table_name")
+            .unwrap_or(&"logs".to_string())
+            .to_string();
+        let db_address = config
+            .get("connection")
+            .unwrap_or(&"postgresql://localhost:5432".to_string())
+            .to_string();
 
-        let conn = Connection::connect(db_address, TlsMode::None).unwrap();
+        let conn = Connection::connect(db_address, TlsMode::None)
+            .map_err(|err| println!("PostgresOutputNode error: {:?}", err))
+            .and_then(|c| {
+                let _ = c.execute(
+                    &format!(
+                        "CREATE TABLE IF NOT EXISTS {:?} (
+                        id SERIAL PRIMARY KEY,
+                        rfc3339 TIMESTAMP WITH TIME ZONE,
+                        body VARCHAR NOT NULL
+                    )",
+                        &table_name
+                    ),
+                    &[],
+                ).map_err(|err| println!("PostgresOutputNode error: {:?}", err));
 
-        // TODO: Support JSONB + serde
-        conn.execute(
-            &format!(
-                "CREATE TABLE IF NOT EXISTS {:?} (
-                id SERIAL PRIMARY KEY,
-                rfc3339 TIMESTAMP WITH TIME ZONE,
-                body VARCHAR NOT NULL
-            )",
-                &table_name
-            ),
-            &[],
-        ).unwrap();
+                Ok(c)
+            });
 
-        let receiver = self.rx.clone();
-        let tx = self.tx_out.clone().map(|t| Arc::new(Mutex::new(t)));
-
-        let _ = thread::spawn(move || {
-            let tx_child = tx.clone();
-
-            loop {
-                let log = receiver.lock().unwrap().recv().unwrap();
-
-                let _ = conn.execute(
+        // // TODO: Support JSONB + serde
+        let mut log: Log = Log::new("lol".to_string(), None);
+        passthrough!(self, log, {
+            if let Ok(ref c) = conn {
+                let _ = c.execute(
                     &format!(
                         "INSERT INTO {:?} (rfc3339, body) VALUES ($1, $2)",
                         table_name
                     ),
                     &[&log.timestamp, &log.payload],
                 ).map_err(|err| println!("PostgresOutputNode error: {:?}", err));
-
-                if tx_child.as_ref().is_some() {
-                    let _ = tx_child.as_ref().unwrap().lock().unwrap().send(log);
-                }
             }
         });
-
-        Ok(self.tx_inc.clone())
     }
 }
 

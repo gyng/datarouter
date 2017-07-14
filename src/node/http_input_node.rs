@@ -58,7 +58,10 @@ impl Node for HttpInputNode {
                 .launch()
         );
 
-        Ok(self.tx_inc.clone())
+        let mut log: Log = Log::new("lol".to_string(), None);
+        passthrough!(self, log, {
+            println!("HTTPIN: {:?}", log);
+        });
     }
 }
 
