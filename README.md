@@ -1,13 +1,13 @@
-# \<Untitled project\>
+# datarouter
 
 In development. Intended to route logs/data from one place to another, with processing as needed. Maybe a simpler version of rsyslog?
 
 ## Usage
 
-For pipeline configuration see `pipeline.json`
+For pipeline configuration see `pipeline.example.json`
 
 ```
-cargo run --release -- pipeline.json
+cargo run --release -- config/pipeline.example.json
 ```
 
 ## TODO 
