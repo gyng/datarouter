@@ -1,6 +1,8 @@
 {
   "node": "HttpInputNode",
-  "conf": {},
+  "conf": {
+    "auth": "{\"JWT\":[\"HS256\",\"secret\"]}"
+  },
   "next": {
     "node": "StdoutOutputNode",
     "next": {

@@ -17,3 +17,5 @@ cargo run --release -- config/pipeline.example.json
 * Postgres JSONB w/ serde support, sane default config
 * Move Rocket config into pipeline.json
 * Add auth for HTTP input node (JWT, Basic, None)
+* Change config HashMap<String, String> to <String, Value>
+* Fix panics in cargo test

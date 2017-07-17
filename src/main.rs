@@ -9,6 +9,7 @@ extern crate serde;
 extern crate serde_json;
 extern crate postgres;
 extern crate chrono;
+extern crate biscuit;
 
 use std::env;
 use std::fs::File;
