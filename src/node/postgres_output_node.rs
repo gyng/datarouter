@@ -12,7 +12,7 @@ use node::Node;
 
 #[derive(Debug)]
 pub struct PostgresOutputNode {
-    config: Option<HashMap<String, String>>,
+    config: HashMap<String, String>,
     rx: Arc<Mutex<Receiver<Log>>>,
     tx_inc: Sender<Log>,
     tx_out: Option<Sender<Log>>,
@@ -23,24 +23,34 @@ impl PostgresOutputNode {
         let (sender, receiver) = channel();
 
         Self {
-            config: config,
+            config: config.unwrap_or(PostgresOutputNode::default_config()),
             rx: Arc::new(Mutex::new(receiver)),
             tx_inc: sender,
             tx_out: next,
         }
     }
+
+    pub fn default_config() -> HashMap<String, String> {
+        let mut config = HashMap::new();
+        config.insert("table_name".to_string(), "logs".to_string());
+        config.insert(
+            "connection".to_string(),
+            "postgresql://localhost:5432".to_string(),
+        );
+
+        config
+    }
 }
 
 impl Node for PostgresOutputNode {
     fn start(&self) -> Result<Sender<Log>, String> {
-        let config = self.config.clone().unwrap_or(HashMap::new());
-        let table_name = config
+        let table_name = self.config
             .get("table_name")
-            .unwrap_or(&"logs".to_string())
+            .expect("Missing table_name key for PG configuration")
             .to_string();
-        let db_address = config
+        let db_address = self.config
             .get("connection")
-            .unwrap_or(&"postgresql://localhost:5432".to_string())
+            .expect("Missing connection key for PG configuration")
             .to_string();
 
         let conn = Connection::connect(db_address, TlsMode::None)
