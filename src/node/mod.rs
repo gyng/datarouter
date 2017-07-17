@@ -19,12 +19,20 @@ macro_rules! passthrough {
         let _ = thread::spawn(move || {
             let tx_child = tx.clone();
             loop {
-                $log = rx.lock().unwrap().recv().unwrap(); // panics on recv in test
+                $log = rx.lock()
+                    .expect("faied to acquire lock on node rx")
+                    .recv()
+                    .map_err(|e| format!("{:?}", e))
+                    .expect("failed to receive on node rx"); // panics on recv in test
 
                 $blk
 
                 if tx_child.as_ref().is_some() {
-                    let _ = tx_child.as_ref().unwrap().lock().unwrap().send($log);
+                    let _ = tx_child.as_ref()
+                        .expect("failed to get reference to node tx_child")
+                        .lock()
+                        .expect("failed to acquire lock on node tx_child")
+                        .send($log);
                 }
             }
         });
