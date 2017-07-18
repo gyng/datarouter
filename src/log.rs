@@ -15,4 +15,12 @@ impl Log {
             label: label,
         }
     }
+
+    pub fn empty() -> Log {
+        Log {
+            timestamp: UTC::now(),
+            payload: "".to_string(),
+            label: None,
+        }
+    }
 }

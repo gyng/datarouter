@@ -3,7 +3,7 @@ use rocket::State;
 use rocket::Outcome;
 use rocket::http::Status;
 use rocket::request::{self, Request, FromRequest};
-use serde_json;
+use serde_json::{self, Map, Value};
 use biscuit::{JWT, jws, jwa, Empty};
 use biscuit::jwa::SignatureAlgorithm;
 
@@ -11,7 +11,6 @@ use std::sync::mpsc::{Sender, Receiver};
 use std::sync::Mutex;
 use std::sync::Arc;
 use std::sync::mpsc::channel;
-use std::collections::HashMap;
 use std::thread;
 
 use Log;
@@ -43,9 +42,18 @@ fn secret_type(algorithm: SignatureAlgorithm) -> SecretType {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+#[serde(untagged)]
 enum AuthConfig {
     NoAuth,
-    JWT(jwa::SignatureAlgorithm, String),
+    JWT {
+        algorithm: jwa::SignatureAlgorithm,
+        secret_sauce: String,
+    },
+}
+
+struct Config {
+    auth: AuthConfig,
+    secret: jws::Secret,
 }
 
 struct AuthGuard();
@@ -54,12 +62,14 @@ impl<'a, 'r> FromRequest<'a, 'r> for AuthGuard {
     type Error = ();
 
     fn from_request(request: &'a Request<'r>) -> request::Outcome<AuthGuard, ()> {
-        let auth_config: &AuthConfig = request.guard::<State<AuthConfig>>()?.inner();
+        let node_config: &Config = request.guard::<State<Config>>()?.inner();
 
-        match *auth_config {
+        match node_config.auth {
             AuthConfig::NoAuth |
-            AuthConfig::JWT(SignatureAlgorithm::None, _) => Outcome::Success(AuthGuard()),
-            AuthConfig::JWT(algorithm, _) => {
+            AuthConfig::JWT { algorithm: SignatureAlgorithm::None, .. } => Outcome::Success(
+                AuthGuard(),
+            ),
+            AuthConfig::JWT { algorithm, .. } => {
                 macro_rules! fail_auth_if {
                     ($condition:expr) => (
                         if $condition {
@@ -68,8 +78,7 @@ impl<'a, 'r> FromRequest<'a, 'r> for AuthGuard {
                     )
                 }
 
-                let biscuit_secret = request.guard::<State<jws::Secret>>()?;
-                if let jws::Secret::None = *biscuit_secret {
+                if let jws::Secret::None = node_config.secret {
                     // biscuit: no PartialEq on Secret, can't do ==
                     fail_auth_if!(true);
                 }
@@ -86,7 +95,7 @@ impl<'a, 'r> FromRequest<'a, 'r> for AuthGuard {
                 let token = JWT::<Empty, Empty>::new_encoded(
                     &token_string.expect("failed to get token from header"),
                 );
-                let token = token.into_decoded(&biscuit_secret, algorithm);
+                let token = token.into_decoded(&node_config.secret, algorithm);
                 fail_auth_if!(token.is_err());
 
                 Outcome::Success(AuthGuard())
@@ -115,26 +124,30 @@ fn logs(label: String, body: String, _auth: AuthGuard, tx_out: State<Option<Mute
 
 #[derive(Debug)]
 pub struct HttpInputNode {
-    config: HashMap<String, String>,
+    config: Map<String, Value>,
     rx: Arc<Mutex<Receiver<Log>>>,
     tx_inc: Sender<Log>,
     tx_out: Option<Sender<Log>>,
 }
 
 impl HttpInputNode {
-    pub fn new(config: Option<HashMap<String, String>>, next: Option<Sender<Log>>) -> Self {
+    pub fn new(config: Option<Value>, next: Option<Sender<Log>>) -> Self {
         let (sender, receiver) = channel();
 
         Self {
-            config: config.unwrap_or(HttpInputNode::default_config()),
+            config: config
+                .unwrap_or(HttpInputNode::default_config())
+                .as_object()
+                .unwrap()
+                .clone(),
             rx: Arc::new(Mutex::new(receiver)),
             tx_inc: sender,
             tx_out: next,
         }
     }
 
-    pub fn default_config() -> HashMap<String, String> {
-        HashMap::new()
+    pub fn default_config() -> Value {
+        json!({})
     }
 }
 
@@ -142,19 +155,22 @@ impl Node for HttpInputNode {
     fn start(&self) -> Result<Sender<Log>, String> {
         let tx = self.tx_out.clone().map(|t| Mutex::new(t));
 
-        // todo: use Value from serde_json for config
+        // todo: figure out the nice way to deserialize a Map into an object
         let auth_config: AuthConfig = serde_json::from_str(
-            self.config.get("auth").unwrap_or(&"NoAuth".to_string()),
+            &self.config.get("auth").unwrap_or(&json!(null)).to_string(),
         ).unwrap_or(AuthConfig::NoAuth);
 
         // Cannot deserialize Secret from JSON, so do it manually
-        let biscuit_secret = match auth_config {
+        let secret = match *&auth_config {
             AuthConfig::NoAuth => jws::Secret::None,
-            AuthConfig::JWT(algorithm, ref secret) => {
+            AuthConfig::JWT {
+                algorithm,
+                ref secret_sauce,
+            } => {
                 match secret_type(algorithm) {
-                    SecretType::Shared => jws::Secret::Bytes(secret.to_string().into_bytes()),
+                    SecretType::Shared => jws::Secret::Bytes(secret_sauce.to_string().into_bytes()),
                     SecretType::Key => {
-                        jws::Secret::public_key_from_file(secret).expect(
+                        jws::Secret::public_key_from_file(&secret_sauce).expect(
                             "failed to create secret from file",
                         )
                     }
@@ -163,16 +179,20 @@ impl Node for HttpInputNode {
             }
         };
 
+        let node_config = Config {
+            auth: auth_config,
+            secret: secret,
+        };
+
         thread::spawn(|| {
             let _ = rocket::ignite()
                 .manage(tx)
-                .manage(auth_config)
-                .manage(biscuit_secret) // really ugly, deserialise this into AuthConfig instead
+                .manage(node_config)
                 .mount("/", routes![index, logs])
                 .launch();
         });
 
-        let mut log: Log = Log::new("lol".to_string(), None);
+        let mut log: Log = Log::empty();
         passthrough!(self, log, { /* noop */ });
     }
 }
@@ -208,7 +228,7 @@ mod test {
             .unwrap();
         assert!(resp.status().is_success());
 
-        // Flakey test
+        // Flaky test
         // let log = receiver.recv().unwrap();
         // assert_eq!(log.label, Some("noquack".to_string()));
         // assert_eq!(log.payload, "foo bar my baz bax");
