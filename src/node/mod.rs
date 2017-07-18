@@ -20,10 +20,9 @@ macro_rules! passthrough {
             let tx_child = tx.clone();
             loop {
                 $log = rx.lock()
-                    .expect("faied to acquire lock on node rx")
+                    .expect("failed to acquire lock on node rx")
                     .recv()
-                    .map_err(|e| format!("{:?}", e))
-                    .expect("failed to receive on node rx"); // panics on recv in test
+                    .expect("failed to receive on node rx");
 
                 $blk
 

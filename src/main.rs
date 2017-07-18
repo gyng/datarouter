@@ -11,6 +11,9 @@ extern crate postgres;
 extern crate chrono;
 extern crate biscuit;
 
+#[cfg(test)]
+extern crate reqwest;
+
 use std::env;
 use std::fs::File;
 use std::io::Read;

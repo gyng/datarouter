@@ -19,3 +19,4 @@ cargo run --release -- config/pipeline.example.json
 * Add auth for HTTP input node (JWT, Basic, None)
 * Change config HashMap<String, String> to <String, Value>
 * Fix panics in cargo test
+* Move key reading out from request guard for certificate-using JWT algorithms
