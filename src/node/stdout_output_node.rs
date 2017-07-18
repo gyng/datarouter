@@ -1,7 +1,8 @@
+use serde_json::Value;
+
 use std::sync::Mutex;
 use std::sync::Arc;
 use std::sync::mpsc::channel;
-use std::collections::HashMap;
 use std::sync::mpsc::{Sender, Receiver};
 use std::thread;
 
@@ -16,7 +17,7 @@ pub struct StdoutOutputNode {
 }
 
 impl StdoutOutputNode {
-    pub fn new(_config: Option<HashMap<String, String>>, next: Option<Sender<Log>>) -> Self {
+    pub fn new(_config: Option<Value>, next: Option<Sender<Log>>) -> Self {
         let (sender, receiver) = channel();
 
         Self {
@@ -29,7 +30,7 @@ impl StdoutOutputNode {
 
 impl Node for StdoutOutputNode {
     fn start(&self) -> Result<Sender<Log>, String> {
-        let mut log: Log = Log::new("lol".to_string(), None);
+        let mut log: Log = Log::empty();
         passthrough!(self, log, { println!("{:?}", log.clone()); });
     }
 }

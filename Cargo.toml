@@ -16,3 +16,6 @@ serde_derive = "1.0.9"
 postgres = { version = "0.14.2", features = ["with-chrono", "with-serde_json"] }
 chrono = "0.3" # postgres does not support chrono 0.4 yet https://github.com/sfackler/rust-postgres/issues/276
 biscuit = "0.0.6"
+
+[dev-dependencies]
+reqwest = "0.7.1"

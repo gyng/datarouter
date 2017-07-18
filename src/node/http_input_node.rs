@@ -3,45 +3,84 @@ use rocket::State;
 use rocket::Outcome;
 use rocket::http::Status;
 use rocket::request::{self, Request, FromRequest};
-use serde_json;
-use biscuit::{self, JWT, jws, jwa, Empty};
+use serde_json::{self, Map, Value};
+use biscuit::{JWT, jws, jwa, Empty};
 use biscuit::jwa::SignatureAlgorithm;
 
 use std::sync::mpsc::{Sender, Receiver};
 use std::sync::Mutex;
 use std::sync::Arc;
 use std::sync::mpsc::channel;
-use std::collections::HashMap;
 use std::thread;
 
 use Log;
 use node::Node;
 
-#[derive(Serialize, Deserialize, Debug)]
-enum AuthConfig {
-    NoAuth,
-    JWT(biscuit::jwa::SignatureAlgorithm, String),
+#[derive(PartialEq)]
+enum SecretType {
+    None,
+    Shared,
+    Key,
 }
 
-struct AuthGuard(bool);
+fn secret_type(algorithm: SignatureAlgorithm) -> SecretType {
+    match algorithm {
+        SignatureAlgorithm::HS256 |
+        SignatureAlgorithm::HS384 |
+        SignatureAlgorithm::HS512 => SecretType::Shared,
+        SignatureAlgorithm::RS256 |
+        SignatureAlgorithm::RS384 |
+        SignatureAlgorithm::RS512 |
+        SignatureAlgorithm::ES256 |
+        SignatureAlgorithm::ES384 |
+        SignatureAlgorithm::ES512 |
+        SignatureAlgorithm::PS256 |
+        SignatureAlgorithm::PS384 |
+        SignatureAlgorithm::PS512 => SecretType::Key,
+        SignatureAlgorithm::None => SecretType::None,
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(untagged)]
+enum AuthConfig {
+    NoAuth,
+    JWT {
+        algorithm: jwa::SignatureAlgorithm,
+        secret_sauce: String,
+    },
+}
+
+struct Config {
+    auth: AuthConfig,
+    secret: jws::Secret,
+}
+
+struct AuthGuard();
 
 impl<'a, 'r> FromRequest<'a, 'r> for AuthGuard {
     type Error = ();
 
     fn from_request(request: &'a Request<'r>) -> request::Outcome<AuthGuard, ()> {
-        let auth_config: &AuthConfig = request.guard::<State<AuthConfig>>()?.inner();
+        let node_config: &Config = request.guard::<State<Config>>()?.inner();
 
-        match *auth_config {
-            AuthConfig::NoAuth => Outcome::Success(AuthGuard(true)),
-            AuthConfig::JWT(SignatureAlgorithm::HS256, ref secret) |
-            AuthConfig::JWT(SignatureAlgorithm::HS384, ref secret) |
-            AuthConfig::JWT(SignatureAlgorithm::HS512, ref secret) => {
+        match node_config.auth {
+            AuthConfig::NoAuth |
+            AuthConfig::JWT { algorithm: SignatureAlgorithm::None, .. } => Outcome::Success(
+                AuthGuard(),
+            ),
+            AuthConfig::JWT { algorithm, .. } => {
                 macro_rules! fail_auth_if {
                     ($condition:expr) => (
                         if $condition {
                             return Outcome::Failure((Status::BadRequest, ()));
                         }
                     )
+                }
+
+                if let jws::Secret::None = node_config.secret {
+                    // biscuit: no PartialEq on Secret, can't do ==
+                    fail_auth_if!(true);
                 }
 
                 let tokens: Vec<_> = request.headers().get("Authorization").collect();
@@ -56,15 +95,10 @@ impl<'a, 'r> FromRequest<'a, 'r> for AuthGuard {
                 let token = JWT::<Empty, Empty>::new_encoded(
                     &token_string.expect("failed to get token from header"),
                 );
-                let biscuit_secret = jws::Secret::Bytes(secret.to_string().into_bytes());
-                let token = token.into_decoded(&biscuit_secret, jwa::SignatureAlgorithm::HS256);
+                let token = token.into_decoded(&node_config.secret, algorithm);
                 fail_auth_if!(token.is_err());
 
-                Outcome::Success(AuthGuard(true))
-            }
-            AuthConfig::JWT(_, ref _secret) => {
-                println!("JWT algorithm not implemented yet");
-                return Outcome::Failure((Status::BadRequest, ()));
+                Outcome::Success(AuthGuard())
             }
         }
     }
@@ -90,26 +124,30 @@ fn logs(label: String, body: String, _auth: AuthGuard, tx_out: State<Option<Mute
 
 #[derive(Debug)]
 pub struct HttpInputNode {
-    config: HashMap<String, String>,
+    config: Map<String, Value>,
     rx: Arc<Mutex<Receiver<Log>>>,
     tx_inc: Sender<Log>,
     tx_out: Option<Sender<Log>>,
 }
 
 impl HttpInputNode {
-    pub fn new(config: Option<HashMap<String, String>>, next: Option<Sender<Log>>) -> Self {
+    pub fn new(config: Option<Value>, next: Option<Sender<Log>>) -> Self {
         let (sender, receiver) = channel();
 
         Self {
-            config: config.unwrap_or(HttpInputNode::default_config()),
+            config: config
+                .unwrap_or(HttpInputNode::default_config())
+                .as_object()
+                .unwrap()
+                .clone(),
             rx: Arc::new(Mutex::new(receiver)),
             tx_inc: sender,
             tx_out: next,
         }
     }
 
-    pub fn default_config() -> HashMap<String, String> {
-        HashMap::new()
+    pub fn default_config() -> Value {
+        json!({})
     }
 }
 
@@ -117,23 +155,44 @@ impl Node for HttpInputNode {
     fn start(&self) -> Result<Sender<Log>, String> {
         let tx = self.tx_out.clone().map(|t| Mutex::new(t));
 
-        // todo: use Value from serde_json
-        let auth_algorithm: AuthConfig = serde_json::from_str(
-            self.config.get("auth").unwrap_or(&"NoAuth".to_string()),
+        // todo: figure out the nice way to deserialize a Map into an object
+        let auth_config: AuthConfig = serde_json::from_str(
+            &self.config.get("auth").unwrap_or(&json!(null)).to_string(),
         ).unwrap_or(AuthConfig::NoAuth);
 
-        println!("{:?}", auth_algorithm);
-        let auth_config = auth_algorithm;
+        // Cannot deserialize Secret from JSON, so do it manually
+        let secret = match *&auth_config {
+            AuthConfig::NoAuth => jws::Secret::None,
+            AuthConfig::JWT {
+                algorithm,
+                ref secret_sauce,
+            } => {
+                match secret_type(algorithm) {
+                    SecretType::Shared => jws::Secret::Bytes(secret_sauce.to_string().into_bytes()),
+                    SecretType::Key => {
+                        jws::Secret::public_key_from_file(&secret_sauce).expect(
+                            "failed to create secret from file",
+                        )
+                    }
+                    SecretType::None => jws::Secret::None,
+                }
+            }
+        };
+
+        let node_config = Config {
+            auth: auth_config,
+            secret: secret,
+        };
 
         thread::spawn(|| {
             let _ = rocket::ignite()
                 .manage(tx)
-                .manage(auth_config)
+                .manage(node_config)
                 .mount("/", routes![index, logs])
                 .launch();
         });
 
-        let mut log: Log = Log::new("lol".to_string(), None);
+        let mut log: Log = Log::empty();
         passthrough!(self, log, { /* noop */ });
     }
 }
@@ -141,9 +200,39 @@ impl Node for HttpInputNode {
 #[cfg(test)]
 mod test {
     use super::*;
+    use std::time::Duration;
+    use std::thread::sleep;
+    use Log;
+    use reqwest;
 
     #[test]
     fn it_passes_received_logs_through() {
         test_passthrough!(HttpInputNode);
+    }
+
+    #[test]
+    fn it_starts_the_server_with_the_default_config() {
+        let (sender, _) = channel();
+        let _ = HttpInputNode::new(None, Some(sender)).start();
+        sleep(Duration::from_millis(250));
+
+        let resp = reqwest::get("http://localhost:8000/").unwrap();
+        assert!(resp.status().is_success());
+
+        let client = reqwest::Client::new().unwrap();
+        let resp = client
+            .post("http://localhost:8000/logs/noquack")
+            .unwrap()
+            .body("foo bar my baz bax")
+            .send()
+            .unwrap();
+        assert!(resp.status().is_success());
+
+        // Flaky test
+        // let log = receiver.recv().unwrap();
+        // assert_eq!(log.label, Some("noquack".to_string()));
+        // assert_eq!(log.payload, "foo bar my baz bax");
+
+        return;
     }
 }

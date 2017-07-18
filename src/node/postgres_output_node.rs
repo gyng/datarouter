@@ -1,7 +1,8 @@
+use serde_json::{Map, Value};
+
 use std::sync::Mutex;
 use std::sync::Arc;
 use std::sync::mpsc::channel;
-use std::collections::HashMap;
 use std::sync::mpsc::{Sender, Receiver};
 use std::thread;
 
@@ -12,33 +13,33 @@ use node::Node;
 
 #[derive(Debug)]
 pub struct PostgresOutputNode {
-    config: HashMap<String, String>,
+    config: Map<String, Value>,
     rx: Arc<Mutex<Receiver<Log>>>,
     tx_inc: Sender<Log>,
     tx_out: Option<Sender<Log>>,
 }
 
 impl PostgresOutputNode {
-    pub fn new(config: Option<HashMap<String, String>>, next: Option<Sender<Log>>) -> Self {
+    pub fn new(config: Option<Value>, next: Option<Sender<Log>>) -> Self {
         let (sender, receiver) = channel();
 
         Self {
-            config: config.unwrap_or(PostgresOutputNode::default_config()),
+            config: config
+                .unwrap_or(PostgresOutputNode::default_config())
+                .as_object()
+                .unwrap()
+                .clone(),
             rx: Arc::new(Mutex::new(receiver)),
             tx_inc: sender,
             tx_out: next,
         }
     }
 
-    pub fn default_config() -> HashMap<String, String> {
-        let mut config = HashMap::new();
-        config.insert("table_name".to_string(), "logs".to_string());
-        config.insert(
-            "connection".to_string(),
-            "postgresql://localhost:5432".to_string(),
-        );
-
-        config
+    pub fn default_config() -> Value {
+        json!({
+            "table_name": "logs",
+            "connection": "postgres://localhost:5432"
+        })
     }
 }
 
@@ -46,11 +47,15 @@ impl Node for PostgresOutputNode {
     fn start(&self) -> Result<Sender<Log>, String> {
         let table_name = self.config
             .get("table_name")
-            .expect("Missing table_name key for PG configuration")
+            .expect("missing table_name key for PG configuration")
+            .as_str()
+            .expect("`table_name` is not a valid string")
             .to_string();
         let db_address = self.config
             .get("connection")
-            .expect("Missing connection key for PG configuration")
+            .expect("missing connection key for PG configuration")
+            .as_str()
+            .expect("`connection` is not a valid string")
             .to_string();
 
         let conn = Connection::connect(db_address, TlsMode::None)
@@ -72,7 +77,7 @@ impl Node for PostgresOutputNode {
             });
 
         // // TODO: Support JSONB + serde
-        let mut log: Log = Log::new("lol".to_string(), None);
+        let mut log: Log = Log::empty();
         passthrough!(self, log, {
             if let Ok(ref c) = conn {
                 let _ = c.execute(

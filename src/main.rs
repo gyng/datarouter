@@ -6,10 +6,15 @@ extern crate serde_derive;
 
 extern crate rocket;
 extern crate serde;
+
+#[macro_use]
 extern crate serde_json;
 extern crate postgres;
 extern crate chrono;
 extern crate biscuit;
+
+#[cfg(test)]
+extern crate reqwest;
 
 use std::env;
 use std::fs::File;

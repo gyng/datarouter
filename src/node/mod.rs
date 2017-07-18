@@ -1,7 +1,7 @@
+use serde_json::Value;
 use std::sync::mpsc::Sender;
 use std::sync::mpsc::channel;
 use std::fmt::Debug;
-use std::collections::HashMap;
 
 use log::Log;
 
@@ -20,10 +20,9 @@ macro_rules! passthrough {
             let tx_child = tx.clone();
             loop {
                 $log = rx.lock()
-                    .expect("faied to acquire lock on node rx")
+                    .expect("failed to acquire lock on node rx")
                     .recv()
-                    .map_err(|e| format!("{:?}", e))
-                    .expect("failed to receive on node rx"); // panics on recv in test
+                    .expect("failed to receive on node rx"); // panics when channel is closed
 
                 $blk
 
@@ -58,7 +57,7 @@ pub enum NodeType {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct NodeConfig {
     pub node: NodeType,
-    pub conf: Option<HashMap<String, String>>,
+    pub conf: Option<Value>,
     pub next: Option<Box<NodeConfig>>,
 }
 

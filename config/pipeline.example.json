@@ -1,7 +1,10 @@
 {
   "node": "HttpInputNode",
   "conf": {
-    "auth": "{\"JWT\":[\"HS256\",\"secret\"]}"
+    "auth": {
+      "algorithm": "RS256",
+      "secret_sauce": "config/rsa_public_key.example.der"
+    }
   },
   "next": {
     "node": "StdoutOutputNode",
