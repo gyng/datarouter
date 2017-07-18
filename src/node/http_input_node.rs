@@ -48,7 +48,7 @@ enum AuthConfig {
     JWT(jwa::SignatureAlgorithm, String),
 }
 
-struct AuthGuard(());
+struct AuthGuard();
 
 impl<'a, 'r> FromRequest<'a, 'r> for AuthGuard {
     type Error = ();
@@ -58,7 +58,7 @@ impl<'a, 'r> FromRequest<'a, 'r> for AuthGuard {
 
         match *auth_config {
             AuthConfig::NoAuth |
-            AuthConfig::JWT(SignatureAlgorithm::None, _) => Outcome::Success(AuthGuard(())),
+            AuthConfig::JWT(SignatureAlgorithm::None, _) => Outcome::Success(AuthGuard()),
             AuthConfig::JWT(algorithm, _) => {
                 macro_rules! fail_auth_if {
                     ($condition:expr) => (
@@ -68,12 +68,10 @@ impl<'a, 'r> FromRequest<'a, 'r> for AuthGuard {
                     )
                 }
 
-                let biscuit_secret = request.guard::<State<jws::Secret>>()?.inner();
-                // biscuit: no PartialEq on Secret
-                // fail_auth_if!(biscuit_secret == jws::Secret::None);
-                match *biscuit_secret {
-                    jws::Secret::None => fail_auth_if!(true),
-                    _ => {}
+                let biscuit_secret = request.guard::<State<jws::Secret>>()?;
+                if let jws::Secret::None = *biscuit_secret {
+                    // biscuit: no PartialEq on Secret, can't do ==
+                    fail_auth_if!(true);
                 }
 
                 let tokens: Vec<_> = request.headers().get("Authorization").collect();
@@ -89,10 +87,9 @@ impl<'a, 'r> FromRequest<'a, 'r> for AuthGuard {
                     &token_string.expect("failed to get token from header"),
                 );
                 let token = token.into_decoded(&biscuit_secret, algorithm);
-                println!("{:?}", token);
                 fail_auth_if!(token.is_err());
 
-                Outcome::Success(AuthGuard(()))
+                Outcome::Success(AuthGuard())
             }
         }
     }
@@ -156,9 +153,11 @@ impl Node for HttpInputNode {
             AuthConfig::JWT(algorithm, ref secret) => {
                 match secret_type(algorithm) {
                     SecretType::Shared => jws::Secret::Bytes(secret.to_string().into_bytes()),
-                    SecretType::Key => jws::Secret::public_key_from_file(secret).expect(
-                        "failed to create secret from file",
-                    ),
+                    SecretType::Key => {
+                        jws::Secret::public_key_from_file(secret).expect(
+                            "failed to create secret from file",
+                        )
+                    }
                     SecretType::None => jws::Secret::None,
                 }
             }
@@ -201,9 +200,12 @@ mod test {
         assert!(resp.status().is_success());
 
         let client = reqwest::Client::new().unwrap();
-        let resp = client.post("http://localhost:8000/logs/noquack").unwrap()
+        let resp = client
+            .post("http://localhost:8000/logs/noquack")
+            .unwrap()
             .body("foo bar my baz bax")
-            .send().unwrap();
+            .send()
+            .unwrap();
         assert!(resp.status().is_success());
 
         // Flakey test
