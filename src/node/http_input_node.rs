@@ -17,31 +17,6 @@ use std::time::Duration;
 use Log;
 use node::Node;
 
-#[derive(PartialEq)]
-enum SecretType {
-    None,
-    Shared,
-    Key,
-}
-
-fn secret_type(algorithm: SignatureAlgorithm) -> SecretType {
-    match algorithm {
-        SignatureAlgorithm::HS256 |
-        SignatureAlgorithm::HS384 |
-        SignatureAlgorithm::HS512 => SecretType::Shared,
-        SignatureAlgorithm::RS256 |
-        SignatureAlgorithm::RS384 |
-        SignatureAlgorithm::RS512 |
-        SignatureAlgorithm::ES256 |
-        SignatureAlgorithm::ES384 |
-        SignatureAlgorithm::ES512 |
-        SignatureAlgorithm::PS256 |
-        SignatureAlgorithm::PS384 |
-        SignatureAlgorithm::PS512 => SecretType::Key,
-        SignatureAlgorithm::None => SecretType::None,
-    }
-}
-
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(untagged)]
 enum AuthConfig {
@@ -106,7 +81,8 @@ impl<'a, 'r> FromRequest<'a, 'r> for AuthGuard {
                         .validate_times(Some(biscuit::TemporalValidationOptions {
                             epsilon: Some(Duration::new(60 * 5, 0)),
                             ..Default::default()
-                        })).is_err()
+                        }))
+                        .is_err()
                 );
 
                 Outcome::Success(AuthGuard())
@@ -141,14 +117,26 @@ fn get_secret_from_auth_config(auth_config: &AuthConfig) -> jws::Secret {
             algorithm,
             ref secret_sauce,
         } => {
-            match secret_type(algorithm) {
-                SecretType::Shared => jws::Secret::Bytes(secret_sauce.to_string().into_bytes()),
-                SecretType::Key => {
+            match algorithm {
+                SignatureAlgorithm::HS256 |
+                SignatureAlgorithm::HS384 |
+                SignatureAlgorithm::HS512 => jws::Secret::Bytes(
+                    secret_sauce.to_string().into_bytes(),
+                ),
+                SignatureAlgorithm::RS256 |
+                SignatureAlgorithm::RS384 |
+                SignatureAlgorithm::RS512 |
+                SignatureAlgorithm::ES256 |
+                SignatureAlgorithm::ES384 |
+                SignatureAlgorithm::ES512 |
+                SignatureAlgorithm::PS256 |
+                SignatureAlgorithm::PS384 |
+                SignatureAlgorithm::PS512 => {
                     jws::Secret::public_key_from_file(&secret_sauce).expect(
                         "failed to create secret from file",
                     )
                 }
-                SecretType::None => jws::Secret::None,
+                SignatureAlgorithm::None => jws::Secret::None,
             }
         }
     }
@@ -217,16 +205,19 @@ mod test {
     use super::*;
     use std::time::Duration;
     use std::thread::sleep;
+    use std::env;
     use Log;
     use reqwest;
 
     #[test]
     fn it_passes_received_logs_through() {
+        env::set_var("ROCKET_LOG", "critical");
         test_passthrough!(HttpInputNode);
     }
 
     #[test]
     fn it_starts_the_server_with_the_default_config() {
+        env::set_var("ROCKET_LOG", "critical");
         let (sender, _) = channel();
         let _ = HttpInputNode::new(None, Some(sender)).start();
         sleep(Duration::from_millis(250));
