@@ -1,14 +1,12 @@
 #![feature(plugin)]
 #![plugin(rocket_codegen)]
 
+extern crate serde;
 #[macro_use]
 extern crate serde_derive;
-
-extern crate rocket;
-extern crate serde;
-
 #[macro_use]
 extern crate serde_json;
+extern crate rocket;
 extern crate postgres;
 extern crate chrono;
 extern crate biscuit;

@@ -122,6 +122,27 @@ fn logs(label: String, body: String, _auth: AuthGuard, tx_out: State<Option<Mute
     }
 }
 
+fn get_secret_from_auth_config(auth_config: &AuthConfig) -> jws::Secret {
+    // Cannot deserialize Secret from JSON, so do it manually
+    match *auth_config {
+        AuthConfig::NoAuth => jws::Secret::None,
+        AuthConfig::JWT {
+            algorithm,
+            ref secret_sauce,
+        } => {
+            match secret_type(algorithm) {
+                SecretType::Shared => jws::Secret::Bytes(secret_sauce.to_string().into_bytes()),
+                SecretType::Key => {
+                    jws::Secret::public_key_from_file(&secret_sauce).expect(
+                        "failed to create secret from file",
+                    )
+                }
+                SecretType::None => jws::Secret::None,
+            }
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct HttpInputNode {
     config: Map<String, Value>,
@@ -160,28 +181,9 @@ impl Node for HttpInputNode {
             &self.config.get("auth").unwrap_or(&json!(null)).to_string(),
         ).unwrap_or(AuthConfig::NoAuth);
 
-        // Cannot deserialize Secret from JSON, so do it manually
-        let secret = match *&auth_config {
-            AuthConfig::NoAuth => jws::Secret::None,
-            AuthConfig::JWT {
-                algorithm,
-                ref secret_sauce,
-            } => {
-                match secret_type(algorithm) {
-                    SecretType::Shared => jws::Secret::Bytes(secret_sauce.to_string().into_bytes()),
-                    SecretType::Key => {
-                        jws::Secret::public_key_from_file(&secret_sauce).expect(
-                            "failed to create secret from file",
-                        )
-                    }
-                    SecretType::None => jws::Secret::None,
-                }
-            }
-        };
-
         let node_config = Config {
             auth: auth_config,
-            secret: secret,
+            secret: get_secret_from_auth_config(&auth_config),
         };
 
         thread::spawn(|| {
