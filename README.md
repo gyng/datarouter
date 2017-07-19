@@ -34,9 +34,8 @@ To build an executable:
 cargo build --release
 ```
 
-## TODO 
+## TODO
 
-* Postgres JSONB w/ serde support
 * Move Rocket config into `pipeline.json`
 * Add basic auth for HTTP input node?
 * CORS

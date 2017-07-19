@@ -6,6 +6,7 @@ use std::sync::mpsc::channel;
 use std::sync::mpsc::{Sender, Receiver};
 use std::thread;
 
+use serde_json;
 use postgres::{Connection, TlsMode};
 
 use Log;
@@ -38,7 +39,8 @@ impl PostgresOutputNode {
     pub fn default_config() -> Value {
         json!({
             "table_name": "logs",
-            "connection": "postgres://localhost:5432"
+            "connection": "postgres://localhost:5432",
+            "use_json": false
         })
     }
 }
@@ -57,6 +59,11 @@ impl Node for PostgresOutputNode {
             .as_str()
             .expect("`connection` is not a valid string")
             .to_string();
+        let use_json = self.config
+            .get("use_json")
+            .expect("missing use_json for PG configuration")
+            .as_bool()
+            .expect("`use_json` is not a valid boolean");
 
         let conn = Connection::connect(db_address, TlsMode::None)
             .map_err(|err| println!("PostgresOutputNode error: {:?}", err))
@@ -66,9 +73,10 @@ impl Node for PostgresOutputNode {
                         "CREATE TABLE IF NOT EXISTS {:?} (
                         id SERIAL PRIMARY KEY,
                         rfc3339 TIMESTAMP WITH TIME ZONE,
-                        body VARCHAR NOT NULL
+                        body {} NOT NULL
                     )",
-                        &table_name
+                        &table_name,
+                        if use_json { "JSONB" } else { "VARCHAR" }
                     ),
                     &[],
                 ).map_err(|err| println!("PostgresOutputNode error: {:?}", err));
@@ -80,13 +88,29 @@ impl Node for PostgresOutputNode {
         let mut log: Log = Log::empty();
         passthrough!(self, log, {
             if let Ok(ref c) = conn {
-                let _ = c.execute(
-                    &format!(
-                        "INSERT INTO {:?} (rfc3339, body) VALUES ($1, $2)",
-                        table_name
-                    ),
-                    &[&log.timestamp, &log.payload],
-                ).map_err(|err| println!("PostgresOutputNode error: {:?}", err));
+                if use_json {
+                    let payload: Result<serde_json::Value, _> = serde_json::from_str(&log.payload);
+
+                    if payload.is_ok() {
+                        let _ = c.execute(
+                            &format!(
+                                "INSERT INTO {:?} (rfc3339, body) VALUES ($1, $2)",
+                                table_name
+                            ),
+                            &[&log.timestamp, &payload.unwrap()],
+                        ).map_err(|err| println!("PostgresOutputNode error: {:?}", err));
+                    }
+                } else {
+                    let _ = c.execute(
+                        &format!(
+                            "INSERT INTO {:?} (rfc3339, body) VALUES ($1, $2)",
+                            table_name
+                        ),
+                        &[&log.timestamp, &log.payload],
+                    ).map_err(|err| println!("PostgresOutputNode error: {:?}", err));
+                };
+
+
             }
         });
     }
