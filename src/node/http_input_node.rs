@@ -4,7 +4,7 @@ use rocket::Outcome;
 use rocket::http::Status;
 use rocket::request::{self, Request, FromRequest};
 use serde_json::{self, Map, Value};
-use biscuit::{JWT, jws, jwa, Empty};
+use biscuit::{self, JWT, jws, jwa, Empty};
 use biscuit::jwa::SignatureAlgorithm;
 
 use std::sync::mpsc::{Sender, Receiver};
@@ -12,6 +12,7 @@ use std::sync::Mutex;
 use std::sync::Arc;
 use std::sync::mpsc::channel;
 use std::thread;
+use std::time::Duration;
 
 use Log;
 use node::Node;
@@ -92,11 +93,21 @@ impl<'a, 'r> FromRequest<'a, 'r> for AuthGuard {
                 let token_string = auth_string.next();
                 fail_auth_if!(token_string.is_none());
 
-                let token = JWT::<Empty, Empty>::new_encoded(
-                    &token_string.expect("failed to get token from header"),
-                );
+                let token = JWT::<Empty, Empty>::new_encoded(&token_string.unwrap());
                 let token = token.into_decoded(&node_config.secret, algorithm);
                 fail_auth_if!(token.is_err());
+
+                fail_auth_if!(
+                    token
+                        .unwrap()
+                        .payload()
+                        .unwrap()
+                        .registered
+                        .validate_times(Some(biscuit::TemporalValidationOptions {
+                            epsilon: Some(Duration::new(60 * 5, 0)),
+                            ..Default::default()
+                        })).is_err()
+                );
 
                 Outcome::Success(AuthGuard())
             }
@@ -181,9 +192,11 @@ impl Node for HttpInputNode {
             &self.config.get("auth").unwrap_or(&json!(null)).to_string(),
         ).unwrap_or(AuthConfig::NoAuth);
 
+        let secret = get_secret_from_auth_config(&auth_config);
+
         let node_config = Config {
             auth: auth_config,
-            secret: get_secret_from_auth_config(&auth_config),
+            secret: secret,
         };
 
         thread::spawn(|| {
