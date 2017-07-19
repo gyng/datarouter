@@ -19,12 +19,17 @@ macro_rules! passthrough {
         let _ = thread::spawn(move || {
             let tx_child = tx.clone();
             loop {
-                $log = rx.lock()
+                let recv = rx.lock()
                     .expect("failed to acquire lock on node rx") // TODO: need to handled poisoned lock?
-                    .recv()
-                    .map_err(|_| return) // No further messages if it fails => disconnected
-                    .unwrap();
+                    .recv();
 
+                if recv.is_err() {
+                    // No further messages if it fails => disconnected
+                    // Abort this forwarding thread
+                    return;
+                }
+
+                $log = recv.unwrap();
                 $blk
 
                 if tx_child.as_ref().is_some() {
