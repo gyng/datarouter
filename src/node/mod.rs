@@ -20,9 +20,10 @@ macro_rules! passthrough {
             let tx_child = tx.clone();
             loop {
                 $log = rx.lock()
-                    .expect("failed to acquire lock on node rx")
+                    .expect("failed to acquire lock on node rx") // TODO: need to handled poisoned lock?
                     .recv()
-                    .expect("failed to receive on node rx"); // panics when channel is closed
+                    .map_err(|_| return) // No further messages if it fails => disconnected
+                    .unwrap();
 
                 $blk
 
