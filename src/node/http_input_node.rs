@@ -68,7 +68,7 @@ impl<'a, 'r> FromRequest<'a, 'r> for AuthGuard {
                 let token_string = auth_string.next();
                 fail_auth_if!(token_string.is_none());
 
-                let token = JWT::<Empty, Empty>::new_encoded(&token_string.unwrap());
+                let token = JWT::<Empty, Empty>::new_encoded(token_string.unwrap());
                 let token = token.into_decoded(&node_config.secret, algorithm);
                 fail_auth_if!(token.is_err());
 
@@ -132,7 +132,7 @@ fn get_secret_from_auth_config(auth_config: &AuthConfig) -> jws::Secret {
                 SignatureAlgorithm::PS256 |
                 SignatureAlgorithm::PS384 |
                 SignatureAlgorithm::PS512 => {
-                    jws::Secret::public_key_from_file(&secret_sauce).expect(
+                    jws::Secret::public_key_from_file(secret_sauce).expect(
                         "failed to create secret from file",
                     )
                 }
@@ -156,7 +156,7 @@ impl HttpInputNode {
 
         Self {
             config: config
-                .unwrap_or(HttpInputNode::default_config())
+                .unwrap_or_else(HttpInputNode::default_config)
                 .as_object()
                 .unwrap()
                 .clone(),
@@ -173,7 +173,7 @@ impl HttpInputNode {
 
 impl Node for HttpInputNode {
     fn start(&self) -> Result<Sender<Log>, String> {
-        let tx = self.tx_out.clone().map(|t| Mutex::new(t));
+        let tx = self.tx_out.clone().map(Mutex::new);
 
         // todo: figure out the nice way to deserialize a Map into an object
         let auth_config: AuthConfig = serde_json::from_str(

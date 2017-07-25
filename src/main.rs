@@ -37,7 +37,7 @@ fn main() {
         return;
     }
     let pipeline_path = &args[1];
-    let config = read_pipeline_config(&pipeline_path).unwrap();
+    let config = read_pipeline_config(pipeline_path).unwrap();
     start_pipeline(&config);
 }
 
@@ -68,7 +68,7 @@ fn start_pipeline(config: &NodeConfig) -> Option<Sender<Log>> {
 
 fn chain_pipeline(node_config: &NodeConfig) -> Option<Sender<Log>> {
     let next = if let Some(ref next_config) = node_config.next {
-        chain_pipeline(&next_config)
+        chain_pipeline(next_config)
     } else {
         None
     };

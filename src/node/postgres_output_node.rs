@@ -26,7 +26,7 @@ impl PostgresOutputNode {
 
         Self {
             config: config
-                .unwrap_or(PostgresOutputNode::default_config())
+                .unwrap_or_else(PostgresOutputNode::default_config)
                 .as_object()
                 .unwrap()
                 .clone(),

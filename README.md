@@ -39,7 +39,6 @@ cargo build --release
 * Move Rocket config into `pipeline.json`
 * Add basic auth for HTTP input node?
 * CORS
-* Fix panics in cargo test
 * Elasticsearch output?
 * File input and output
 * STDIN input?
